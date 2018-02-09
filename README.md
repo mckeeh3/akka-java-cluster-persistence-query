@@ -3,7 +3,7 @@
 ### Installation and Running
 
 ~~~~bash
-git clone https://github.com/mckeeh3/akka-java-cluster-persistence.git
+git clone https://github.com/mckeeh3/akka-java-cluster-persistence-query.git
 cd akka-java-cluster-persistence
 mvn compile
 ~~~~

@@ -4,7 +4,7 @@
 
 ~~~~bash
 git clone https://github.com/mckeeh3/akka-java-cluster-persistence-query.git
-cd akka-java-cluster-persistence
+cd akka-java-cluster-persistence-query
 mvn compile
 ~~~~
 The following Maven command runs a signle JVM with 3 Akka actor systems on ports 2551, 2552, and a radmonly selected port.

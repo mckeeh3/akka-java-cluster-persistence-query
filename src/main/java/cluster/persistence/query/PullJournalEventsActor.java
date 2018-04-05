@@ -13,7 +13,7 @@ class PullJournalEventsActor extends AbstractLoggingActor {
     }
 
     private void entityEvent(EntityMessage.EntityEvent entityEvent) {
-        log().info("{} <- {}", entityEvent, getSender().path());
+        log().info("{} <- {}", entityEvent, sender().path());
     }
 
     @Override
@@ -21,7 +21,7 @@ class PullJournalEventsActor extends AbstractLoggingActor {
         log().info("Start");
 
         for (int i = 0; i < EntityMessage.numberOfEventTags; i++) {
-            getContext().actorOf(PullTaggedJournalEventsActor.props("" + i), String.format("pullTaggedJournalEvents-%d", i));
+            context().actorOf(PullTaggedJournalEventsActor.props("" + i), String.format("pullTaggedJournalEvents-%d", i));
         }
     }
 

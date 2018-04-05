@@ -49,10 +49,10 @@ class PullTaggedJournalEventsActor extends AbstractLoggingActor {
     }
 
     private void runPullJournalStream() {
-        ActorMaterializer materializer = ActorMaterializer.create(getContext().getSystem());
+        ActorMaterializer materializer = ActorMaterializer.create(context().system());
 
         CassandraReadJournal cassandraReadJournal =
-                PersistenceQuery.get(getContext().getSystem()).getReadJournalFor(CassandraReadJournal.class, CassandraReadJournal.Identifier());
+                PersistenceQuery.get(context().system()).getReadJournalFor(CassandraReadJournal.class, CassandraReadJournal.Identifier());
 
         Source<EventEnvelope, NotUsed> source = cassandraReadJournal.eventsByTag(tag, offset());
         source.runForeach(this::handleEvent, materializer);
@@ -65,7 +65,7 @@ class PullTaggedJournalEventsActor extends AbstractLoggingActor {
     }
 
     private void handleEvent(EventEnvelope eventEnvelope) {
-        getContext().getParent().tell(eventEnvelope.event(), getSelf());
+        context().parent().tell(eventEnvelope.event(), self());
         cassandraJournal.setTagReadProgress(new TagReadProgress(tag, eventEnvelope.offset()));
     }
 

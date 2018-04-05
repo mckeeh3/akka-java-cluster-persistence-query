@@ -22,10 +22,10 @@ class PullJournalIdsActor extends AbstractLoggingActor {
     }
 
     private void runPullJournalStream() {
-        ActorMaterializer materializer = ActorMaterializer.create(getContext().getSystem());
+        ActorMaterializer materializer = ActorMaterializer.create(context().system());
 
         CassandraReadJournal cassandraReadJournal =
-                PersistenceQuery.get(getContext().getSystem()).getReadJournalFor(CassandraReadJournal.class, CassandraReadJournal.Identifier());
+                PersistenceQuery.get(context().system()).getReadJournalFor(CassandraReadJournal.class, CassandraReadJournal.Identifier());
 
         Source<String, NotUsed> source = cassandraReadJournal.persistenceIds(); // TODO offset?
         source.runForeach(this::handleId, materializer);

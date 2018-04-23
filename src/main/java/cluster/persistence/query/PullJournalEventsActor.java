@@ -20,8 +20,8 @@ class PullJournalEventsActor extends AbstractLoggingActor {
     public void preStart() {
         log().info("Start");
 
-        for (int i = 0; i < EntityMessage.numberOfEventTags; i++) {
-            context().actorOf(PullTaggedJournalEventsActor.props("" + i), String.format("pullTaggedJournalEvents-%d", i));
+        for (int i = 0; i <= EntityMessage.numberOfEventTags; i++) {
+            context().actorOf(ReadSideProcessorEventTagsActor.props("" + i), String.format("pullTaggedJournalEvents-%d", i));
         }
     }
 

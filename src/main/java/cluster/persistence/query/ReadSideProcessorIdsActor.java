@@ -8,7 +8,7 @@ import akka.persistence.query.PersistenceQuery;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Source;
 
-class PullJournalIdsActor extends AbstractLoggingActor {
+class ReadSideProcessorIdsActor extends AbstractLoggingActor {
     @Override
     public Receive createReceive() {
         return receiveBuilder()
@@ -41,6 +41,6 @@ class PullJournalIdsActor extends AbstractLoggingActor {
     }
 
     static Props props() {
-        return Props.create(PullJournalIdsActor.class);
+        return Props.create(ReadSideProcessorIdsActor.class);
     }
 }

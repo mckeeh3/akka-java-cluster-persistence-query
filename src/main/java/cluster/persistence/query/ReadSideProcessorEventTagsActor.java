@@ -23,12 +23,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-class PullTaggedJournalEventsActor extends AbstractLoggingActor {
-    private final String tag;
+class ReadSideProcessorEventTagsActor extends AbstractLoggingActor {
+    private final ReadSideProcessorActor.Tag tag;
     private CassandraJournal cassandraJournal;
     private Optional<TagReadProgress> tagReadProgress;
 
-    private PullTaggedJournalEventsActor(String tag) {
+    private ReadSideProcessorEventTagsActor(ReadSideProcessorActor.Tag tag) {
         this.tag = tag;
     }
 
@@ -43,7 +43,7 @@ class PullTaggedJournalEventsActor extends AbstractLoggingActor {
         log().info("Start for tag {}", tag);
 
         cassandraJournal = new CassandraJournal();
-        tagReadProgress = cassandraJournal.getTagReadProgress(tag);
+        tagReadProgress = cassandraJournal.getTagReadProgress(tag.value);
 
         runPullJournalStream();
     }
@@ -54,7 +54,7 @@ class PullTaggedJournalEventsActor extends AbstractLoggingActor {
         CassandraReadJournal cassandraReadJournal =
                 PersistenceQuery.get(context().system()).getReadJournalFor(CassandraReadJournal.class, CassandraReadJournal.Identifier());
 
-        Source<EventEnvelope, NotUsed> source = cassandraReadJournal.eventsByTag(tag, offset());
+        Source<EventEnvelope, NotUsed> source = cassandraReadJournal.eventsByTag(tag.value, offset());
         source.runForeach(this::handleEvent, materializer);
     }
 
@@ -66,7 +66,7 @@ class PullTaggedJournalEventsActor extends AbstractLoggingActor {
 
     private void handleEvent(EventEnvelope eventEnvelope) {
         context().parent().tell(eventEnvelope.event(), self());
-        cassandraJournal.setTagReadProgress(new TagReadProgress(tag, eventEnvelope.offset()));
+        cassandraJournal.setTagReadProgress(new TagReadProgress(tag.value, eventEnvelope.offset()));
     }
 
     @Override
@@ -76,7 +76,7 @@ class PullTaggedJournalEventsActor extends AbstractLoggingActor {
     }
 
     static Props props(String tag) {
-        return Props.create(PullTaggedJournalEventsActor.class, tag);
+        return Props.create(ReadSideProcessorEventTagsActor.class, tag);
     }
 
     private static class Config {
@@ -134,11 +134,12 @@ class PullTaggedJournalEventsActor extends AbstractLoggingActor {
         }
 
         private void createOffsetTable() {
-            session.execute("CREATE TABLE IF NOT EXISTS tag_read_progress ("
+            ResultSet execute = session.execute("CREATE TABLE IF NOT EXISTS tag_read_progress ("
                     + "tag text PRIMARY KEY,"
                     + "offset timeuuid"
                     + ");"
             );
+            System.out.println(execute.getExecutionInfo().getWarnings());
         }
 
         Optional<TagReadProgress> getTagReadProgress(String tag) {

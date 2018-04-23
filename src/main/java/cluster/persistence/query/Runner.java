@@ -1,7 +1,14 @@
 package cluster.persistence.query;
 
+import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
+import akka.actor.PoisonPill;
+import akka.actor.Props;
 import akka.cluster.Cluster;
+import akka.cluster.sharding.ClusterSharding;
+import akka.cluster.sharding.ClusterShardingSettings;
+import akka.cluster.singleton.ClusterSingletonManager;
+import akka.cluster.singleton.ClusterSingletonManagerSettings;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 
@@ -28,6 +35,8 @@ class Runner {
             Cluster cluster = Cluster.get(actorSystem);
             cluster.leave(cluster.selfAddress());
         }
+
+        System.exit(0);
     }
 
     private static List<ActorSystem> startupClusterNodes(List<String> ports) {
@@ -38,8 +47,10 @@ class Runner {
             ActorSystem actorSystem = ActorSystem.create("persistence", setupClusterNodeConfig(port));
 
             actorSystem.actorOf(ClusterListenerActor.props(), "clusterListener");
-            actorSystem.actorOf(PullJournalEventsActor.props(), "pullJournalEvents");
-            actorSystem.actorOf(PullJournalIdsActor.props(), "pullJournalIds");
+//            actorSystem.actorOf(PullJournalEventsActor.props(), "pullJournalEvents");
+//            actorSystem.actorOf(ReadSideProcessorIdsActor.props(), "pullJournalIds");
+
+            createClusterSingletonManagerActor(actorSystem);
 
             actorSystems.add(actorSystem);
         }
@@ -53,6 +64,27 @@ class Runner {
                         String.format("akka.remote.artery.canonical.port=%s%n", port))
                 .withFallback(ConfigFactory.load()
                 );
+    }
+
+    private static void createClusterSingletonManagerActor(ActorSystem actorSystem) {
+        ClusterSingletonManagerSettings settings = ClusterSingletonManagerSettings.create(actorSystem).withRole("read-side");
+        Props clusterSingletonManagerProps = ClusterSingletonManager.props(
+                ClusterSingletonActor.props(setupClusterSharding(actorSystem)),
+                PoisonPill.getInstance(),
+                settings
+        );
+
+        actorSystem.actorOf(clusterSingletonManagerProps, "clusterSingletonManager");
+    }
+
+    private static ActorRef setupClusterSharding(ActorSystem actorSystem) {
+        ClusterShardingSettings settings = ClusterShardingSettings.create(actorSystem).withRole("read-side");
+        return ClusterSharding.get(actorSystem).start(
+                "readSideProcessor",
+                ReadSideProcessorActor.props(),
+                settings,
+                ReadSideProcessorActor.messageExtractor()
+        );
     }
 
     private static void hitEnterToStop() {

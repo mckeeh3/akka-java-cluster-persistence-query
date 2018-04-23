@@ -11,6 +11,7 @@
     <properties>
         <java.version>1.8</java.version>
         <akka.version>2.5.9</akka.version>
+        <akka.alpakka.version>0.18</akka.alpakka.version>
     </properties>
 
     <dependencies>
@@ -53,6 +54,11 @@
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-slf4j_2.12</artifactId>
             <version>${akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.lightbend.akka</groupId>
+            <artifactId>akka-stream-alpakka-cassandra_2.12</artifactId>
+            <version>${akka.alpakka.version}</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>

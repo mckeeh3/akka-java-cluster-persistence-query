@@ -6,6 +6,7 @@ import akka.persistence.cassandra.query.javadsl.CassandraReadJournal;
 import akka.persistence.query.EventEnvelope;
 import akka.persistence.query.Offset;
 import akka.persistence.query.PersistenceQuery;
+import akka.persistence.query.TimeBasedUUID;
 import akka.stream.ActorMaterializer;
 import akka.stream.alpakka.cassandra.javadsl.CassandraSource;
 import akka.stream.javadsl.Sink;
@@ -23,12 +24,15 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     private final ReadSideProcessorActor.Tag tag;
     private final Session session;
     private final ActorMaterializer actorMaterializer;
+    private final PreparedStatement preparedUpdateStatement;
 
     public ReadSideProcessorEventTagActor(ReadSideProcessorActor.Tag tag) {
         this.tag = tag;
 
         session = session();
         actorMaterializer = ActorMaterializer.create(context().system());
+
+        preparedUpdateStatement = session.prepare("update tag_read_progress set offset = ? where tag = ?");
     }
 
     @Override
@@ -55,8 +59,8 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     }
 
     private void readTagOffset() {
-        final Statement statement = new SimpleStatement(String.format("SELECT offset FROM tag_read_progress WHERE tag = '%s'", tag.value));
-        CassandraSource.create(statement, session).runWith(Sink.seq(), actorMaterializer)
+        PreparedStatement preparedStatement = session.prepare("SELECT offset FROM tag_read_progress WHERE tag = ?");
+        CassandraSource.create(preparedStatement.bind(tag.value), session).runWith(Sink.seq(), actorMaterializer)
                 .whenComplete((r, t) -> {
                     if (t == null) {
                         readEventByTag(r);
@@ -83,6 +87,7 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     }
 
     private void readEventsByTag(Offset offset) {
+        log().info("Read {} from offset {}", tag, offset);
         CassandraReadJournal cassandraReadJournal =
                 PersistenceQuery.get(context().system()).getReadJournalFor(CassandraReadJournal.class, CassandraReadJournal.Identifier());
 
@@ -91,6 +96,15 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
 
     private void handleEvent(EventEnvelope eventEnvelope) {
         log().info("{}", eventEnvelope);
+        // todo add something to do updates every Nth event
+        updateTagOffset(eventEnvelope.offset());
+    }
+
+    private void updateTagOffset(Offset offset) {
+        CassandraSource.create(preparedUpdateStatement.bind(((TimeBasedUUID) offset).value(), tag.value), session).runWith(Sink.seq(), actorMaterializer)
+                .exceptionally(t -> {
+                    throw new RuntimeException(String.format("Update tag_read_progress, %s failed!", tag), t);
+                });
     }
 
     @Override

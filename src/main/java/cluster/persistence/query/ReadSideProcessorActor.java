@@ -64,7 +64,7 @@ class ReadSideProcessorActor extends AbstractLoggingActor {
 
         static Collection<Tag> tags() {
             List<Tag> tags = new ArrayList<>();
-            for (int t = 1; t <= EntityMessage.numberOfEventTags; t++) {
+            for (int t = 0; t < EntityMessage.numberOfEventTags; t++) {
                 tags.add(new Tag(t + ""));
             }
             return tags;

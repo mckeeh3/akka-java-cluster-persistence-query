@@ -47,7 +47,6 @@ class Runner {
             ActorSystem actorSystem = ActorSystem.create("persistence", setupClusterNodeConfig(port));
 
             actorSystem.actorOf(ClusterListenerActor.props(), "clusterListener");
-//            actorSystem.actorOf(PullJournalEventsActor.props(), "pullJournalEvents");
 //            actorSystem.actorOf(ReadSideProcessorIdsActor.props(), "pullJournalIds");
 
             createClusterSingletonManagerActor(actorSystem);

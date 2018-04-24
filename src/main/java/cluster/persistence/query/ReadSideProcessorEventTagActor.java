@@ -74,12 +74,8 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
         if (rows.size() > 0) {
             readEventsByTag(rows.get(0).getUUID("offset"));
         } else {
-            readEventsByTag();
+            readEventsByTag(Offset.noOffset());
         }
-    }
-
-    private void readEventsByTag() {
-        readEventsByTag(Offset.noOffset());
     }
 
     private void readEventsByTag(UUID uuid) {

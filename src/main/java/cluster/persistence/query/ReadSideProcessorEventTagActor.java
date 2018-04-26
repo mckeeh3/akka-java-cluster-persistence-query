@@ -38,7 +38,18 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     @Override
     public Receive createReceive() {
         return receiveBuilder()
+                .match(ReadSideProcessorActor.Tag.class, this::heartbeat)
                 .build();
+    }
+
+    private void heartbeat(ReadSideProcessorActor.Tag tag) {
+        log().info("heartbeat {}", tag);
+    }
+
+    @Override
+    public void preStart() {
+        log().info("Start");
+        createOffsetTable();
     }
 
     private void createOffsetTable() {
@@ -50,12 +61,12 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
 
         CompletionStage<List<Row>> completionStage = CassandraSource.create(statement, session).runWith(Sink.seq(), actorMaterializer);
         completionStage.whenComplete((r, t) -> {
-            if (t == null) {
-                readTagOffset();
-            } else {
-                throw new RuntimeException("Create table tag_read_progress failed.", t);
-            }
-        });
+                    if (t == null) {
+                        readTagOffset();
+                    } else {
+                        throw new RuntimeException("Create table tag_read_progress failed.", t);
+                    }
+                });
     }
 
     private void readTagOffset() {
@@ -101,12 +112,6 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
                 .exceptionally(t -> {
                     throw new RuntimeException(String.format("Update tag_read_progress, %s failed!", tag), t);
                 });
-    }
-
-    @Override
-    public void preStart() {
-        log().info("Start");
-        createOffsetTable();
     }
 
     @Override

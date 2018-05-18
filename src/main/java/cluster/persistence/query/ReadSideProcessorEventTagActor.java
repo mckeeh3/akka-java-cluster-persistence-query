@@ -32,6 +32,7 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
         session = session();
         actorMaterializer = ActorMaterializer.create(context().system());
 
+        createOffsetTable();
         preparedUpdateStatement = session.prepare("update tag_read_progress set offset = ? where tag = ?");
     }
 
@@ -49,7 +50,6 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     @Override
     public void preStart() {
         log().info("Start");
-        createOffsetTable();
     }
 
     private void createOffsetTable() {

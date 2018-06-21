@@ -7,7 +7,7 @@ import java.time.Instant;
 
 public class EntityMessage {
 
-    public static int numberOfEventTags = 10;
+    public static int numberOfEventTags = 20;
 
     static class Amount implements Serializable {
         static final long serialVersionUID = 42L;
@@ -24,7 +24,7 @@ public class EntityMessage {
         }
     }
 
-    public static class EntityEvent implements Serializable {
+    static class EntityEvent implements Serializable {
         static final long serialVersionUID = 42L;
         final Entity.Id id;
         final Amount amount;

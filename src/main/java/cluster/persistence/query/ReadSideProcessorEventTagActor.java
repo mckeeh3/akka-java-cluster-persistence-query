@@ -12,7 +12,6 @@ import akka.stream.alpakka.cassandra.javadsl.CassandraSource;
 import akka.stream.javadsl.Sink;
 import com.datastax.driver.core.*;
 import com.typesafe.config.ConfigFactory;
-import com.typesafe.config.ConfigValue;
 import com.typesafe.config.ConfigValueType;
 
 import java.util.ArrayList;
@@ -125,9 +124,7 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
 
     private static Session session() {
         Cluster.Builder builder = Cluster.builder();
-        for (String contactPoint : Config.contactPoints()) {
-            builder.addContactPoint(contactPoint);
-        }
+        Config.contactPoints().forEach(builder::addContactPoint);
         builder.withPort(Config.port());
         return builder.build().connect(Config.keyspace());
     }
@@ -136,11 +133,13 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
         static List<String> contactPoints() {
             List<String> contactPoints = new ArrayList<>();
 
-            for (ConfigValue value : ConfigFactory.load().getList("cassandra-journal.contact-points")) {
-                if (value.valueType().equals(ConfigValueType.STRING)) {
-                    contactPoints.add((String) value.unwrapped());
-                }
-            }
+            ConfigFactory.load().getList("cassandra-journal.contact-points")
+                    .forEach(value -> {
+                        if (value.valueType().equals(ConfigValueType.STRING)) {
+                            contactPoints.add((String) value.unwrapped());
+                        }
+                    });
+
             return contactPoints;
         }
 

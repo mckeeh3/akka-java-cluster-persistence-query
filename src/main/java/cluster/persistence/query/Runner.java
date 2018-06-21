@@ -21,20 +21,16 @@ import java.util.List;
 
 class Runner {
     public static void main(String[] args) {
-        List<ActorSystem> actorSystems;
-
-        if (args.length == 0) {
-            actorSystems = startupClusterNodes(Arrays.asList("2551", "2552", "0"));
-        } else {
-            actorSystems = startupClusterNodes(Arrays.asList(args));
-        }
+        List<ActorSystem> actorSystems = args.length == 0
+                ? startupClusterNodes(Arrays.asList("2551", "2552", "0"))
+                : startupClusterNodes(Arrays.asList(args));
 
         hitEnterToStop();
 
-        for (ActorSystem actorSystem : actorSystems) {
+        actorSystems.forEach(actorSystem -> {
             Cluster cluster = Cluster.get(actorSystem);
             cluster.leave(cluster.selfAddress());
-        }
+        });
 
         System.exit(0);
     }
@@ -43,7 +39,7 @@ class Runner {
         System.out.printf("Start cluster on port(s) %s%n", ports);
         List<ActorSystem> actorSystems = new ArrayList<>();
 
-        for (String port : ports) {
+        ports.forEach(port -> {
             ActorSystem actorSystem = ActorSystem.create("persistence", setupClusterNodeConfig(port));
 
             actorSystem.actorOf(ClusterListenerActor.props(), "clusterListener");
@@ -52,7 +48,7 @@ class Runner {
             createClusterSingletonManagerActor(actorSystem);
 
             actorSystems.add(actorSystem);
-        }
+        });
 
         return actorSystems;
     }

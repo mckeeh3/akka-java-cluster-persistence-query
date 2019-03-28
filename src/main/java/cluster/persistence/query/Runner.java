@@ -2,45 +2,34 @@ package cluster.persistence.query;
 
 import akka.Done;
 import akka.actor.*;
-import akka.cluster.Cluster;
 import akka.cluster.sharding.ClusterSharding;
 import akka.cluster.sharding.ClusterShardingSettings;
 import akka.cluster.singleton.ClusterSingletonManager;
 import akka.cluster.singleton.ClusterSingletonManagerSettings;
+import akka.management.javadsl.AkkaManagement;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 class Runner {
     public static void main(String[] args) {
-        List<ActorSystem> actorSystems = args.length == 0
-                ? startupClusterNodes(Arrays.asList("2551", "2552", "0"))
-                : startupClusterNodes(Arrays.asList(args));
-
-        hitEnterToStop();
-
-        actorSystems.forEach(actorSystem -> {
-            Cluster cluster = Cluster.get(actorSystem);
-            cluster.leave(cluster.selfAddress());
-        });
-
-        System.exit(0);
+        if (args.length == 0) {
+            startupClusterNodes(Arrays.asList("2551", "2552", "0"));
+        } else {
+            startupClusterNodes(Arrays.asList(args));
+        }
     }
 
-    private static List<ActorSystem> startupClusterNodes(List<String> ports) {
+    private static void startupClusterNodes(List<String> ports) {
         System.out.printf("Start cluster on port(s) %s%n", ports);
-        List<ActorSystem> actorSystems = new ArrayList<>();
 
         ports.forEach(port -> {
             ActorSystem actorSystem = ActorSystem.create("persistence", setupClusterNodeConfig(port));
-            actorSystems.add(actorSystem);
+
+            AkkaManagement.get(actorSystem).start();
 
             actorSystem.actorOf(ClusterListenerActor.props(), "clusterListener");
 //            actorSystem.actorOf(ReadSideProcessorIdsActor.props(), "pullJournalIds");
@@ -51,8 +40,6 @@ class Runner {
 
             actorSystem.log().info("Akka node {}", actorSystem.provider().getDefaultAddress());
         });
-
-        return actorSystems;
     }
 
     private static Config setupClusterNodeConfig(String port) {
@@ -91,17 +78,5 @@ class Runner {
                     actorSystem.log().warning("Coordinated shutdown phase {}", coordindateShutdownPhase);
                     return CompletableFuture.completedFuture(Done.getInstance());
                 });
-    }
-
-    private static void hitEnterToStop() {
-        System.out.println("Hit Enter to stop");
-
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        try {
-            reader.readLine();
-            reader.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 }

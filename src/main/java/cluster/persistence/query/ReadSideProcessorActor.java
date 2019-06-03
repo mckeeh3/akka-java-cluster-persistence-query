@@ -4,6 +4,7 @@ import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
 import akka.actor.Props;
 import akka.cluster.sharding.ShardRegion;
+import akka.pattern.BackoffOpts;
 import akka.pattern.BackoffSupervisor;
 import akka.routing.MurmurHash;
 import cluster.persistence.EntityMessage;
@@ -15,6 +16,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 class ReadSideProcessorActor extends AbstractLoggingActor {
     private ActorRef readSideProcessorEventTag;
@@ -30,6 +33,13 @@ class ReadSideProcessorActor extends AbstractLoggingActor {
         log().info("{}", tag);
 
         if (readSideProcessorEventTag == null) {
+            BackoffSupervisor.props(BackoffOpts.onFailure(
+                    ReadSideProcessorEventTagActor.props(tag),
+                    String.format("tag-%s", tag.value),
+                    FiniteDuration.create(1, TimeUnit.SECONDS),
+                    FiniteDuration.create(39, TimeUnit.SECONDS),
+                    0.2
+            ));
             Props props = BackoffSupervisor.props(
                     ReadSideProcessorEventTagActor.props(tag),
                     String.format("tag-%s", tag.value),
@@ -63,11 +73,9 @@ class ReadSideProcessorActor extends AbstractLoggingActor {
         }
 
         static Collection<Tag> tags() {
-            List<Tag> tags = new ArrayList<>();
-            for (int t = 0; t < EntityMessage.numberOfEventTags; t++) {
-                tags.add(new Tag(t + ""));
-            }
-            return tags;
+            return IntStream.range(0, EntityMessage.numberOfShards)
+                    .mapToObj(i -> new Tag(i + ""))
+                    .collect(Collectors.toList());
         }
 
         @Override
@@ -90,7 +98,7 @@ class ReadSideProcessorActor extends AbstractLoggingActor {
     }
 
     static ShardRegion.MessageExtractor messageExtractor() {
-        int numberOfShards = EntityMessage.numberOfEventTags;
+        int numberOfShards = EntityMessage.numberOfShards;
 
         return new ShardRegion.MessageExtractor() {
             @Override

@@ -1,11 +1,11 @@
 package cluster.persistence;
 
 import akka.Done;
-import akka.actor.ActorRef;
-import akka.actor.ActorSystem;
-import akka.actor.CoordinatedShutdown;
+import akka.actor.*;
 import akka.cluster.sharding.ClusterSharding;
 import akka.cluster.sharding.ClusterShardingSettings;
+import akka.cluster.singleton.ClusterSingletonManager;
+import akka.cluster.singleton.ClusterSingletonManagerSettings;
 import akka.management.javadsl.AkkaManagement;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
@@ -33,9 +33,8 @@ public class Runner {
 
             actorSystem.actorOf(ClusterListenerActor.props(), "clusterListener");
 
-            ActorRef shardingRegion = setupClusterSharding(actorSystem);
-            actorSystem.actorOf(EntityCommandActor.props(shardingRegion), "entityCommand");
-            actorSystem.actorOf(EntityQueryActor.props(shardingRegion), "entityQuery");
+            startupWriteSide(actorSystem);
+            startupReadSide(actorSystem);
 
             addCoordinatedShutdownTask(actorSystem, CoordinatedShutdown.PhaseClusterShutdown());
 
@@ -44,13 +43,14 @@ public class Runner {
     }
 
     private static void startupWriteSide(ActorSystem actorSystem) {
-        ActorRef shardingRegion = setupClusterSharding(actorSystem);
+        ActorRef shardingRegion = setupWriteSideClusterSharding(actorSystem);
+
         actorSystem.actorOf(EntityCommandActor.props(shardingRegion), "entityCommand");
         actorSystem.actorOf(EntityQueryActor.props(shardingRegion), "entityQuery");
     }
 
-    private static void startupReadSide() {
-
+    private static void startupReadSide(ActorSystem actorSystem) {
+        createReadSideClusterSingletonManagerActor(actorSystem);
     }
 
     private static Config setupClusterNodeConfig(String port) {
@@ -60,7 +60,7 @@ public class Runner {
                 .withFallback(ConfigFactory.load());
     }
 
-    private static ActorRef setupClusterSharding(ActorSystem actorSystem) {
+    private static ActorRef setupWriteSideClusterSharding(ActorSystem actorSystem) {
         ClusterShardingSettings settings = ClusterShardingSettings.create(actorSystem).withRole("write-side");
         return ClusterSharding.get(actorSystem).start(
                 "entity",
@@ -68,6 +68,27 @@ public class Runner {
                 settings,
                 EntityMessage.messageExtractor()
         );
+    }
+
+    private static ActorRef setupReadSideClusterSharding(ActorSystem actorSystem) {
+        ClusterShardingSettings settings = ClusterShardingSettings.create(actorSystem).withRole("read-side");
+        return ClusterSharding.get(actorSystem).start(
+                "readSideProcessor",
+                ReadSideProcessorActor.props(),
+                settings,
+                ReadSideProcessorActor.messageExtractor()
+        );
+    }
+
+    private static void createReadSideClusterSingletonManagerActor(ActorSystem actorSystem) {
+        ClusterSingletonManagerSettings settings = ClusterSingletonManagerSettings.create(actorSystem).withRole("read-side");
+        Props clusterSingletonManagerProps = ClusterSingletonManager.props(
+                ReadSideProcessorHeartbeatSingletonActor.props(setupReadSideClusterSharding(actorSystem)),
+                PoisonPill.getInstance(),
+                settings
+        );
+
+        actorSystem.actorOf(clusterSingletonManagerProps, "clusterSingletonManager");
     }
 
     private static void addCoordinatedShutdownTask(ActorSystem actorSystem, String coordindateShutdownPhase) {

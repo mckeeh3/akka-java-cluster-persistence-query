@@ -1,4 +1,4 @@
-package cluster.persistence.query;
+package cluster.persistence;
 
 import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
@@ -9,11 +9,11 @@ import scala.concurrent.duration.FiniteDuration;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
-class ClusterSingletonActor extends AbstractLoggingActor {
+class ReadSideProcessorHeartbeatSingletonActor extends AbstractLoggingActor {
     private final ActorRef shardRegion;
     private Cancellable heartbeat;
 
-    public ClusterSingletonActor(ActorRef shardRegion) {
+    public ReadSideProcessorHeartbeatSingletonActor(ActorRef shardRegion) {
         this.shardRegion = shardRegion;
     }
 
@@ -60,7 +60,7 @@ class ClusterSingletonActor extends AbstractLoggingActor {
     }
 
     static Props props(ActorRef shardRegion) {
-        return Props.create(ClusterSingletonActor.class, shardRegion);
+        return Props.create(ReadSideProcessorHeartbeatSingletonActor.class, shardRegion);
     }
 
     private static class Heartbeat {

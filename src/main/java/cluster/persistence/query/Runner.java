@@ -52,7 +52,7 @@ class Runner {
     private static void createClusterSingletonManagerActor(ActorSystem actorSystem) {
         ClusterSingletonManagerSettings settings = ClusterSingletonManagerSettings.create(actorSystem).withRole("read-side");
         Props clusterSingletonManagerProps = ClusterSingletonManager.props(
-                ClusterSingletonActor.props(setupClusterSharding(actorSystem)),
+                ReadSideProcessorHeartbeatSingletonActor.props(setupClusterSharding(actorSystem)),
                 PoisonPill.getInstance(),
                 settings
         );

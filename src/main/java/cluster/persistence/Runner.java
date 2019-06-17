@@ -76,7 +76,7 @@ public class Runner {
                 "readSideProcessor",
                 ReadSideProcessorActor.props(),
                 settings,
-                EntityMessage.messageExtractor()
+                ReadSideProcessorActor.messageExtractor()
         );
     }
 

@@ -27,7 +27,7 @@ class ReadSideProcessorActor extends AbstractLoggingActor {
     }
 
     private void heartbeat(Tag tag) {
-        log().info("{}", tag);
+        log().info("Heartbeat {}", tag);
 
         if (readSideProcessorEventTag == null) {
             // todo figure out which supervisor to use
@@ -95,28 +95,26 @@ class ReadSideProcessorActor extends AbstractLoggingActor {
         }
     }
 
-//    static ShardRegion.MessageExtractor messageExtractor() {
-//        int numberOfShards = EntityMessage.numberOfShards;
-//
-//        return new ShardRegion.MessageExtractor() {
-//            @Override
-//            public String shardId(Object message) {
-//                return message instanceof Tag
-//                        ? message.hashCode() % numberOfShards + ""
-//                        : null;
-//            }
-//
-//            @Override
-//            public String entityId(Object message) {
-//                return message instanceof Tag
-//                        ? ((Tag) message).value
-//                        : null;
-//            }
-//
-//            @Override
-//            public Object entityMessage(Object message) {
-//                return message;
-//            }
-//        };
-//    }
+    static ShardRegion.MessageExtractor messageExtractor() {
+        return new ShardRegion.MessageExtractor() {
+            @Override
+            public String shardId(Object message) {
+                return message instanceof Tag
+                        ? message.hashCode() % EntityMessage.numberOfEventTags + ""
+                        : null;
+            }
+
+            @Override
+            public String entityId(Object message) {
+                return message instanceof Tag
+                        ? ((Tag) message).value
+                        : null;
+            }
+
+            @Override
+            public Object entityMessage(Object message) {
+                return message;
+            }
+        };
+    }
 }

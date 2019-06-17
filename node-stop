@@ -9,7 +9,7 @@ usage() {
 stopNode() {
   node=$1
   port="255"$node
-  echo "Stop node $1 on port $port"
+  echo "Stop node $node on port $port"
   pkill -f "$(basename $jarFilename) $port"
 }
 

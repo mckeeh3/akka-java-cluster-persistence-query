@@ -101,6 +101,7 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     }
 
     private void handleEvent(EventEnvelope eventEnvelope) {
+        // Note: this is where the read-side database(s) would be updated with the next event data
         log().info("{}", eventEnvelope);
         // todo add something to do updates every Nth event
         updateTagOffset(eventEnvelope.offset());

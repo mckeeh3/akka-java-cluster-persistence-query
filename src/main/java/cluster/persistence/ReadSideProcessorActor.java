@@ -71,7 +71,7 @@ class ReadSideProcessorActor extends AbstractLoggingActor {
         }
 
         static Collection<Tag> tags() {
-            return IntStream.range(0, EntityMessage.numberOfShards)
+            return IntStream.range(0, EntityMessage.numberOfEventTags)
                     .mapToObj(i -> new Tag(i + ""))
                     .collect(Collectors.toList());
         }
@@ -95,28 +95,28 @@ class ReadSideProcessorActor extends AbstractLoggingActor {
         }
     }
 
-    static ShardRegion.MessageExtractor messageExtractor() {
-        int numberOfShards = EntityMessage.numberOfShards;
-
-        return new ShardRegion.MessageExtractor() {
-            @Override
-            public String shardId(Object message) {
-                return message instanceof Tag
-                        ? message.hashCode() % numberOfShards + ""
-                        : null;
-            }
-
-            @Override
-            public String entityId(Object message) {
-                return message instanceof Tag
-                        ? ((Tag) message).value
-                        : null;
-            }
-
-            @Override
-            public Object entityMessage(Object message) {
-                return message;
-            }
-        };
-    }
+//    static ShardRegion.MessageExtractor messageExtractor() {
+//        int numberOfShards = EntityMessage.numberOfShards;
+//
+//        return new ShardRegion.MessageExtractor() {
+//            @Override
+//            public String shardId(Object message) {
+//                return message instanceof Tag
+//                        ? message.hashCode() % numberOfShards + ""
+//                        : null;
+//            }
+//
+//            @Override
+//            public String entityId(Object message) {
+//                return message instanceof Tag
+//                        ? ((Tag) message).value
+//                        : null;
+//            }
+//
+//            @Override
+//            public Object entityMessage(Object message) {
+//                return message;
+//            }
+//        };
+//    }
 }

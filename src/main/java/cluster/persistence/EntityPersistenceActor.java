@@ -59,6 +59,7 @@ class EntityPersistenceActor extends AbstractPersistentActor {
     }
 
     private void handleDeposit(EntityMessage.DepositCommand depositCommand, Tagged taggedEvent) {
+        log.info("Deposit with tags {}", taggedEvent.tags());
         if (taggedEvent.payload() instanceof EntityMessage.DepositEvent) {
             EntityMessage.DepositEvent depositEvent = (EntityMessage.DepositEvent) taggedEvent.payload();
             update(depositEvent);
@@ -73,6 +74,7 @@ class EntityPersistenceActor extends AbstractPersistentActor {
     }
 
     private void handleWithdrawal(EntityMessage.WithdrawalCommand withdrawalCommand, Tagged taggedEvent) {
+        log.info("Withdrawal with tags {}", taggedEvent.tags());
         if (taggedEvent.payload() instanceof EntityMessage.WithdrawalEvent) {
             EntityMessage.WithdrawalEvent withdrawalEvent = (EntityMessage.WithdrawalEvent) taggedEvent.payload();
             update(withdrawalEvent);

@@ -61,7 +61,7 @@ public class Runner {
     }
 
     private static ActorRef setupWriteSideClusterSharding(ActorSystem actorSystem) {
-        ClusterShardingSettings settings = ClusterShardingSettings.create(actorSystem).withRole("write-side");
+        ClusterShardingSettings settings = ClusterShardingSettings.create(actorSystem);
         return ClusterSharding.get(actorSystem).start(
                 "entity",
                 EntityPersistenceActor.props(),
@@ -71,17 +71,17 @@ public class Runner {
     }
 
     private static ActorRef setupReadSideClusterSharding(ActorSystem actorSystem) {
-        ClusterShardingSettings settings = ClusterShardingSettings.create(actorSystem).withRole("read-side");
+        ClusterShardingSettings settings = ClusterShardingSettings.create(actorSystem);
         return ClusterSharding.get(actorSystem).start(
                 "readSideProcessor",
                 ReadSideProcessorActor.props(),
                 settings,
-                ReadSideProcessorActor.messageExtractor()
+                EntityMessage.messageExtractor()
         );
     }
 
     private static void createReadSideClusterSingletonManagerActor(ActorSystem actorSystem) {
-        ClusterSingletonManagerSettings settings = ClusterSingletonManagerSettings.create(actorSystem).withRole("read-side");
+        ClusterSingletonManagerSettings settings = ClusterSingletonManagerSettings.create(actorSystem);
         Props clusterSingletonManagerProps = ClusterSingletonManager.props(
                 ReadSideProcessorHeartbeatSingletonActor.props(setupReadSideClusterSharding(actorSystem)),
                 PoisonPill.getInstance(),

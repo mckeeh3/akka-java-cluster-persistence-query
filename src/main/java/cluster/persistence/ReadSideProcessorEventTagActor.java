@@ -12,31 +12,26 @@ import akka.stream.Materializer;
 import akka.stream.alpakka.cassandra.javadsl.CassandraSource;
 import akka.stream.javadsl.Sink;
 import com.datastax.driver.core.*;
-import com.typesafe.config.ConfigFactory;
-import com.typesafe.config.ConfigValueType;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 
 public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     private final ReadSideProcessorActor.Tag tag;
     private final Session session;
     private final ActorMaterializer actorMaterializer;
-    private final PreparedStatement preparedUpdateStatement;
     private static final String keyspaceName = "akka";
+    private PreparedStatement preparedUpdateStatement;
 
     public ReadSideProcessorEventTagActor(ReadSideProcessorActor.Tag tag) {
         this.tag = tag;
 
-        session = session();
+        session = Cassandra.session();
         actorMaterializer = ActorMaterializer.create(context().system());
 
-        createKeyspace(session, actorMaterializer);
-
-        createOffsetTable();
-        preparedUpdateStatement = session.prepare("update tag_read_progress set offset = ? where tag = ?");
+        //createOffsetTable();
     }
 
     @Override
@@ -53,6 +48,19 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     @Override
     public void preStart() {
         log().info("Start");
+
+        try {
+            createKeyspace(session, actorMaterializer)
+                    .thenCompose(r -> createOffsetTable(session, actorMaterializer))
+                    .thenCompose(r -> readTagOffset(actorMaterializer))
+                    .thenAccept(this::readEventByTag)
+                    .toCompletableFuture()
+                    .get();
+
+            preparedUpdateStatement = session.prepare(String.format("update %s.tag_read_progress set offset = ? where tag = ?", keyspaceName));
+        } catch (InterruptedException | ExecutionException e) {
+            log().error(e, "Read by tags failed.");
+        }
     }
 
     private static CompletionStage<List<Row>> createKeyspace(Session session, Materializer materializer) {
@@ -63,40 +71,19 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
         return CassandraSource.create(statement, session).runWith(Sink.seq(), materializer);
     }
 
-    private static CompletionStage<List<Row>> createUserEventsTable(Session session, Materializer materializer) {
+    private CompletionStage<List<Row>> createOffsetTable(Session session, Materializer materializer) {
         final Statement statement = new SimpleStatement(
-                String.format("CREATE TABLE IF NOT EXISTS %s.%s (id text PRIMARY KEY, name text);", keyspaceName, tableName));
-
-        return CassandraSource.create(statement, session).runWith(Sink.seq(), materializer);
-    }
-
-    private void createOffsetTable() {
-        final Statement statement = new SimpleStatement(
-                "CREATE TABLE IF NOT EXISTS tag_read_progress ("
+                String.format("CREATE TABLE IF NOT EXISTS %s.tag_read_progress (", keyspaceName)
                         + "tag text PRIMARY KEY,"
                         + "offset timeuuid"
                         + ");");
 
-        CompletionStage<List<Row>> completionStage = CassandraSource.create(statement, session).runWith(Sink.seq(), actorMaterializer);
-        completionStage.whenComplete((r, t) -> {
-                    if (t == null) {
-                        readTagOffset();
-                    } else {
-                        throw new RuntimeException("Create table tag_read_progress failed.", t);
-                    }
-                });
+        return CassandraSource.create(statement, session).runWith(Sink.seq(), materializer);
     }
 
-    private void readTagOffset() {
-        PreparedStatement preparedStatement = session.prepare("SELECT offset FROM tag_read_progress WHERE tag = ?");
-        CassandraSource.create(preparedStatement.bind(tag.value), session).runWith(Sink.seq(), actorMaterializer)
-                .whenComplete((r, t) -> {
-                    if (t == null) {
-                        readEventByTag(r);
-                    } else {
-                        throw new RuntimeException(String.format("Query offset of %s failed!", tag), t);
-                    }
-                });
+    private CompletionStage<List<Row>> readTagOffset(Materializer materializer) {
+        PreparedStatement preparedStatement = session.prepare(String.format("SELECT offset FROM %s.tag_read_progress WHERE tag = ?", keyspaceName));
+        return CassandraSource.create(preparedStatement.bind(tag.value), session).runWith(Sink.seq(), materializer);
     }
 
     private void readEventByTag(List<Row> rows) {
@@ -135,39 +122,12 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     @Override
     public void postStop() {
         log().info("Stop");
+        if (session != null) {
+            session.close();
+        }
     }
 
     static Props props(ReadSideProcessorActor.Tag tag) {
         return Props.create(ReadSideProcessorEventTagActor.class, tag);
-    }
-
-    private static Session session() {
-        Cluster.Builder builder = Cluster.builder();
-        Config.contactPoints().forEach(builder::addContactPoint);
-        builder.withPort(Config.port());
-        return builder.build().connect(Config.keyspace());
-    }
-
-    private static class Config {
-        static List<String> contactPoints() {
-            List<String> contactPoints = new ArrayList<>();
-
-            ConfigFactory.load().getList("cassandra-journal.contact-points")
-                    .forEach(value -> {
-                        if (value.valueType().equals(ConfigValueType.STRING)) {
-                            contactPoints.add((String) value.unwrapped());
-                        }
-                    });
-
-            return contactPoints;
-        }
-
-        static int port() {
-            return ConfigFactory.load().getInt("cassandra-journal.port");
-        }
-
-        static String keyspace() {
-            return ConfigFactory.load().getString("cassandra-journal.keyspace");
-        }
     }
 }

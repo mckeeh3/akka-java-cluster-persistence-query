@@ -19,11 +19,99 @@ The project series is composed of the following projects:
 
 Each project can be cloned, built, and runs independently of the other projects.
 
-This project contains an example implementation of Akka persistence. Here we will focus on the implementation details in this project. Please see the
+This project contains an example implementation of
+[Akka persistence](https://doc.akka.io/docs/akka/current/persistence.html)
+and
+[Akka Persistence Query]((https://doc.akka.io/docs/akka/current/persistence-query.html)).
+Here we will focus on the implementation details in this project. Please see the
 [Akka documentation](https://doc.akka.io/docs/akka/current/persistence-query.html)
 for a more detailed discussion about Akka Persistence Query.
 
 ### What is Akka Persistence Query
+
+This project builds on the
+[akka-java-cluster-persistence](https://github.com/mckeeh3/akka-java-cluster-persistence)
+project, which build on the
+[akka-java-cluster-sharding](https://github.com/mckeeh3/akka-java-cluster-sharding)
+project. While the prior akka-java-cluster-persistence project focused on the creation and persistence of events, this project includes both the creation of events, the write-side of
+[CQRS](https://martinfowler.com/bliki/CQRS.html),
+and it consists of the propagation of events to the read-side of CQRS.
+
+Follow the code in the `Runner` class, and there you will see how the write-side and the read-side processes are started. The write-side in this project is a clone of the write-side in the akka-java-cluster-persistence project. In addition to the write-side classes, this project includes a set of what are called read-side processor classes.
+
+The read-side processing flow is driven through the use of a cluster singleton and cluster sharding. Let's walk through the code.
+
+~~~java
+private static void startupReadSide(ActorSystem actorSystem) {
+    createReadSideClusterSingletonManagerActor(actorSystem);
+}
+~~~
+
+The `Runner` class starts the read-side by invoking the `startupReadSide(actorSystem)` method, which in turn invokes the `createReadSideClusterSingletonManagerActor(actorSystem)` method.
+
+~~~java
+private static void createReadSideClusterSingletonManagerActor(ActorSystem actorSystem) {
+    ClusterSingletonManagerSettings settings = ClusterSingletonManagerSettings.create(actorSystem);
+    Props clusterSingletonManagerProps = ClusterSingletonManager.props(
+            ReadSideProcessorHeartbeatSingletonActor.props(setupReadSideClusterSharding(actorSystem)),
+            PoisonPill.getInstance(),
+            settings
+    );
+
+    actorSystem.actorOf(clusterSingletonManagerProps, "clusterSingletonManager");
+}
+~~~
+
+Note that this cluster singleton actor is the `ReadSideProcessorHeartbeatSingletonActor` class. This singleton actor is passed a cluster shard region actor reference, which is created in the `setupReadSideClusterSharding(actorSystem)` method.
+
+~~~java
+private static ActorRef setupReadSideClusterSharding(ActorSystem actorSystem) {
+    ClusterShardingSettings settings = ClusterShardingSettings.create(actorSystem);
+    return ClusterSharding.get(actorSystem).start(
+            "readSideProcessor",
+            ReadSideProcessorActor.props(),
+            settings,
+            ReadSideProcessorActor.messageExtractor()
+    );
+}
+~~~
+
+In this example implementation, the read-side processing flow relies on a cluster singleton actor to bootstrap and monitor the read-side processing actors.
+
+~~~java
+private void heartbeat() {
+    log().info("Heartbeat {}", ReadSideProcessorActor.Tag.tags());
+    ReadSideProcessorActor.Tag.tags().forEach(tag -> shardRegion.tell(tag, self()));
+}
+~~~
+
+The cluster singleton actor `ReadSideProcessorHeartbeatSingletonActor` schedules a heartbeat interval message. On each heartbeat, the singleton actor sends a message to a `ReadSideProcessorActor` instance. This message is composed of a tag. So what is a tag?
+
+You may recall that as events are persisted they were tagged.
+
+~~~java
+private void deposit(EntityMessage.DepositCommand depositCommand) {
+    log.info("{} <- {}", depositCommand, sender());
+    persist(tagCommand(depositCommand), taggedEvent -> handleDeposit(depositCommand, taggedEvent));
+}
+~~~
+
+Note that in the call to the `persist` method in the `EntityPersistenceActor` class, the `tagCommand` method is invoked.
+
+~~~java
+private static Tagged tagCommand(EntityMessage.DepositCommand depositCommand) {
+    return new Tagged(new EntityMessage.DepositEvent(depositCommand), EntityMessage.eventTag(depositCommand));
+}
+~~~
+
+The `tagCommand` method returns a `Tagged` object, which is an Akka persistence tagged event object. Tags are used to partition events into groups. These tagged groups are used to allow for processing events from the write-side to the read-side in parallel.
+
+This parallel processing is often used when the persisting of events on the write-side is much faster than a single serial process of moving events to the read-side. Tags are used to start multiple concurrent read-side processors. See the documentations
+[EventsByPersistenceIdQuery and CurrentEventsByPersistenceIdQuery](https://doc.akka.io/docs/akka/current/persistence-query.html#eventsbypersistenceidquery-and-currenteventsbypersistenceidquery)
+for more details.
+
+
+
 
 TODO
 
@@ -36,6 +124,10 @@ mvn clean package
 ~~~
 
 The Maven command builds the project and creates a self contained runnable JAR.
+
+### Cassandra Installation
+
+TODO make sure to mention creating all of the tables
 
 ### Run a cluster (Mac, Linux)
 

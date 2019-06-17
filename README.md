@@ -27,7 +27,7 @@ Here we will focus on the implementation details in this project. Please see the
 [Akka documentation](https://doc.akka.io/docs/akka/current/persistence-query.html)
 for a more detailed discussion about Akka Persistence Query.
 
-### What is Akka Persistence Query
+### A an Example Implementation of Akka Persistence Query
 
 This project builds on the
 [akka-java-cluster-persistence](https://github.com/mckeeh3/akka-java-cluster-persistence)
@@ -76,7 +76,7 @@ private static ActorRef setupReadSideClusterSharding(ActorSystem actorSystem) {
 }
 ~~~
 
-In this example implementation, the read-side processing flow relies on a cluster singleton actor to bootstrap and monitor the read-side processing actors.
+In this example implementation, the read-side processing flow relies on a cluster singleton actor to bootstrap and keep the read-side processing actors running.
 
 ~~~java
 private void heartbeat() {
@@ -85,7 +85,9 @@ private void heartbeat() {
 }
 ~~~
 
-The cluster singleton actor `ReadSideProcessorHeartbeatSingletonActor` schedules a heartbeat interval message. On each heartbeat, the singleton actor sends a message to a `ReadSideProcessorActor` instance. This message is composed of a tag. So what is a tag?
+The cluster singleton actor `ReadSideProcessorHeartbeatSingletonActor` schedules a heartbeat interval message. On each heartbeat, the singleton actor sends a message to each `ReadSideProcessorActor` instance. This message is composed of a tag. So what is a tag?
+
+#### A brief overview of event Tags
 
 You may recall that as events are persisted they were tagged.
 
@@ -104,14 +106,34 @@ private static Tagged tagCommand(EntityMessage.DepositCommand depositCommand) {
 }
 ~~~
 
-The `tagCommand` method returns a `Tagged` object, which is an Akka persistence tagged event object. Tags are used to partition events into groups. These tagged groups are used to allow for processing events from the write-side to the read-side in parallel.
+The `tagCommand` method returns a `Tagged` object, which is an Akka persistence tagged event object. Tags are used to partition events into groups. These tagged groups are used to allow for processing events from the write-side to the read-side in parallel. The goal here is to run in parallel multiple read-side processes that are each reading tagged events that are created and persisted on the write-side. Each read-side processor handles all of the events for a specific tag. As we will see, the read-side processors each start a stream of events from the write-side. These write-side events are then used to update read-side views of the data. In this example, we will not be writing the events to a read-side database. The last step of updating the read-side views is very application specific, so this part is not implemented.
 
 This parallel processing is often used when the persisting of events on the write-side is much faster than a single serial process of moving events to the read-side. Tags are used to start multiple concurrent read-side processors. See the documentations
 [EventsByPersistenceIdQuery and CurrentEventsByPersistenceIdQuery](https://doc.akka.io/docs/akka/current/persistence-query.html#eventsbypersistenceidquery-and-currenteventsbypersistenceidquery)
 for more details.
 
+#### Now back to parallel read-side processing
 
+As previously discussed, a cluster singleton actor uses a heartbeat to trigger sending tag messages to a shard region actor. The shard region actor forwards each tag message to a ReadSideProcessorActor. Each `ReadSideProcessorActor` instance creates an instance of a `ReadSideProcessorEventTagActor`, which is created using what is called a backoff supervisor.
 
+~~~java
+private void heartbeat(Tag tag) {
+    log().info("Heartbeat {}", tag);
+
+    if (readSideProcessorEventTag == null) {
+        Props props = BackoffSupervisor.props(
+                ReadSideProcessorEventTagActor.props(tag),
+                String.format("tag-%s", tag.value),
+                FiniteDuration.create(1, TimeUnit.SECONDS),
+                FiniteDuration.create(39, TimeUnit.SECONDS),
+                0.2
+        );
+        readSideProcessorEventTag = context().system().actorOf(props, String.format("supervisor-%s", tag.value));
+    }
+}
+~~~
+
+The `heartbeat` method in the `ReadSideProcessorActor` creates a backoff supervisor for the `ReadSideProcessorEventTagActor`. The reason for using a backoff supervisor is to provide a way to handle problems dealing with failures that occur while accessing external databases. In this example the `ReadSideProcessorEventTagActor` reads events from the write-side database. When the database is unavailable for some reason, this actor will fail and throw an exception. When an external service, such as a database, is unavailable often circuit breakers and retry loops are used to gracefully recover from these failures. This is exactly what a backoff supervisor provides. See the Akka documentation [Delayed restarts with the BackoffSupervisor pattern](https://doc.akka.io/docs/akka/current/general/supervision.html#delayed-restarts-with-the-backoffsupervisor-pattern) for more details.
 
 TODO
 
@@ -125,9 +147,21 @@ mvn clean package
 
 The Maven command builds the project and creates a self contained runnable JAR.
 
-### Cassandra Installation
+### Cassandra Installation and Running
 
-TODO make sure to mention creating all of the tables
+For Cassandra installation please see the [Installing Cassandra](http://cassandra.apache.org/doc/latest/getting_started/installing.html) documentation.
+
+One of the easiest ways to use Cassandra for testing is to download the tar file, uncompress the files, and run a Cassandra process in the background.
+
+tar -xzvf apache-cassandra-3.6-bin.tar.gz
+cd apache-cassandra-3.6
+./bin cassandra -f
+
+This installs a ready to tun version of Cassandra.
+
+Note: please make sure to use Java 8 to run Cassandra.
+
+Tip: the default location of the database files are located in the Cassandra installation `data` directory. You can remove this directory when you want to run tests with an empty database.
 
 ### Run a cluster (Mac, Linux)
 

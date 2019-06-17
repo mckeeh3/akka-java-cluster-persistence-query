@@ -42,7 +42,7 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     }
 
     private void heartbeat(ReadSideProcessorActor.Tag tag) {
-        log().info("heartbeat {}", tag);
+        log().info("Heartbeat {}", tag);
     }
 
     @Override
@@ -107,7 +107,7 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     }
 
     private void handleEvent(EventEnvelope eventEnvelope) {
-        log().info("{}", eventEnvelope);
+        log().info("Read-side {}", eventEnvelope);
         // todo add something to do updates every Nth event
         updateTagOffset(eventEnvelope.offset());
     }

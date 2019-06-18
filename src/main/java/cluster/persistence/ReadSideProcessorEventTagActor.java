@@ -22,7 +22,7 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     private final ReadSideProcessorActor.Tag tag;
     private final Session session;
     private final ActorMaterializer actorMaterializer;
-    private static final String keyspaceName = "akka";
+    private static final String keyspaceName = "akka"; // todo get the keyspace name from the configuration
     private PreparedStatement preparedUpdateStatement;
 
     public ReadSideProcessorEventTagActor(ReadSideProcessorActor.Tag tag) {
@@ -49,11 +49,12 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
     public void preStart() {
         log().info("Start");
 
+        // todo move the creation of the keyspace and the table to the singleton actor
         try {
             createKeyspace(session, actorMaterializer)
                     .thenCompose(r -> createOffsetTable(session, actorMaterializer))
                     .thenCompose(r -> readTagOffset(actorMaterializer))
-                    .thenAccept(this::readEventByTag)
+                    .thenAccept(this::readEventsByTag)
                     .toCompletableFuture()
                     .get();
 
@@ -86,7 +87,7 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
         return CassandraSource.create(preparedStatement.bind(tag.value), session).runWith(Sink.seq(), materializer);
     }
 
-    private void readEventByTag(List<Row> rows) {
+    private void readEventsByTag(List<Row> rows) {
         if (rows.size() > 0) {
             readEventsByTag(rows.get(0).getUUID("offset"));
         } else {
@@ -103,11 +104,15 @@ public class ReadSideProcessorEventTagActor extends AbstractLoggingActor {
         CassandraReadJournal cassandraReadJournal =
                 PersistenceQuery.get(context().system()).getReadJournalFor(CassandraReadJournal.class, CassandraReadJournal.Identifier());
 
-        cassandraReadJournal.eventsByTag(tag.value, offset).runForeach(this::handleEvent, actorMaterializer);
+        cassandraReadJournal.eventsByTag(tag.value, offset).runForeach(this::handleReadSideeEvent, actorMaterializer);
     }
 
-    private void handleEvent(EventEnvelope eventEnvelope) {
+    private void handleReadSideeEvent(EventEnvelope eventEnvelope) {
         log().info("Read-side {}", eventEnvelope);
+
+        // TODO These events are stored in a read-side database.
+        // To keep things simple storing events to a read-side database is not implemented.
+
         // todo add something to do updates every Nth event
         updateTagOffset(eventEnvelope.offset());
     }

@@ -27,7 +27,7 @@ Here we will focus on the implementation details in this project. Please see the
 [Akka documentation](https://doc.akka.io/docs/akka/current/persistence-query.html)
 for a more detailed discussion about Akka Persistence Query.
 
-### A an Example Implementation of Akka Persistence Query
+### An Example Implementation of Akka Persistence Query
 
 This project builds on the
 [akka-java-cluster-persistence](https://github.com/mckeeh3/akka-java-cluster-persistence)
@@ -114,7 +114,7 @@ for more details.
 
 #### Now back to parallel read-side processing
 
-As previously discussed, a cluster singleton actor uses a heartbeat to trigger sending tag messages to a shard region actor. The shard region actor forwards each tag message to a ReadSideProcessorActor. Each `ReadSideProcessorActor` instance creates an instance of a `ReadSideProcessorEventTagActor`, which is created using what is called a backoff supervisor.
+As previously discussed, a cluster singleton actor uses a heartbeat to trigger sending tag messages to a shard region actor. The shard region actor forwards each tag message to a `ReadSideProcessorActor`. Each `ReadSideProcessorActor` instance creates an instance of a `ReadSideProcessorEventTagActor`, which is created using what is called a backoff supervisor.
 
 ~~~java
 private void heartbeat(Tag tag) {
@@ -135,7 +135,80 @@ private void heartbeat(Tag tag) {
 
 The `heartbeat` method in the `ReadSideProcessorActor` creates a backoff supervisor for the `ReadSideProcessorEventTagActor`. The reason for using a backoff supervisor is to provide a way to handle problems dealing with failures that occur while accessing external databases. In this example the `ReadSideProcessorEventTagActor` reads events from the write-side database. When the database is unavailable for some reason, this actor will fail and throw an exception. When an external service, such as a database, is unavailable often circuit breakers and retry loops are used to gracefully recover from these failures. This is exactly what a backoff supervisor provides. See the Akka documentation [Delayed restarts with the BackoffSupervisor pattern](https://doc.akka.io/docs/akka/current/general/supervision.html#delayed-restarts-with-the-backoffsupervisor-pattern) for more details.
 
-TODO
+~~~java
+private CompletionStage<List<Row>> readTagOffset(Materializer materializer) {
+    PreparedStatement preparedStatement = session.prepare(String.format("SELECT offset FROM %s.tag_read_progress WHERE tag = ?", keyspaceName));
+    return CassandraSource.create(preparedStatement.bind(tag.value), session).runWith(Sink.seq(), materializer);
+}
+~~~
+
+
+The `ReadSideProcessorEventTagActor` class does the actual reading from the write-side event store. This class uses a custom Cassandra table to store offsets by tag. Each time an instance of this actor is started it first recovers the offset of the last successfully read event. This offset is then used to resume reading event from that offset point on.
+
+~~~java
+private void readEventsByTag(List<Row> rows) {
+    if (rows.size() > 0) {
+        readEventsByTag(rows.get(0).getUUID("offset"));
+    } else {
+        readEventsByTag(Offset.noOffset());
+    }
+}
+~~~
+
+The results of the offset query are examined in the `readEventsByTag` method. The method handles the case when no offset has yet been stored for a given tag.
+
+~~~java
+private void readEventsByTag(UUID uuid) {
+    readEventsByTag(Offset.timeBasedUUID(uuid));
+}
+~~~
+
+The `readEventsByTag(UUID uuid)` converts the retrieved offset from a `UUID` to an Akka persistence `Offset` type.
+
+~~~java
+private void readEventsByTag(Offset offset) {
+    log().info("Read {} from offset {}", tag, offset);
+    CassandraReadJournal cassandraReadJournal =
+            PersistenceQuery.get(context().system()).getReadJournalFor(CassandraReadJournal.class, CassandraReadJournal.Identifier());
+
+    cassandraReadJournal.eventsByTag(tag.value, offset).runForeach(this::handleEvent, actorMaterializer);
+}
+~~~
+
+The `readEventsByTag` method creates and Akka stream of events. The stream is created using the [Akka Persistence Cassandra](https://doc.akka.io/docs/akka-persistence-cassandra/current/index.html) [Events by Tag](https://doc.akka.io/docs/akka-persistence-cassandra/current/events-by-tag.html). Each streamed event is passed to the `handleReadSideEvent` method.
+
+~~~java
+private void handleReadSideEvent(EventEnvelope eventEnvelope) {
+  log().info("Read-side {}", eventEnvelope);
+
+  // TODO These events are stored in a read-side database.
+  // To keep things simple storing events to a read-side database is not implemented.
+
+  // todo add something to do updates every Nth event
+  updateTagOffset(eventEnvelope.offset());
+}
+
+private void updateTagOffset(Offset offset) {
+    CassandraSource.create(preparedUpdateStatement.bind(((TimeBasedUUID) offset).value(), tag.value), session).runWith(Sink.seq(), actorMaterializer)
+            .exceptionally(t -> {
+                throw new RuntimeException(String.format("Update tag_read_progress, %s failed!", tag), t);
+            });
+}
+~~~
+
+The streamed events are passed to the `headleReadSideEvent` method. Here two things need to be handled. The main task is to use the event to update a read-side database. This activity is very application specific. As mentioned in the comments, this was not implemented to keep things simple.
+
+Also, note that the event offset is stored using the `updateTagOffset` method. In this implementation, the offset is stored for each event. A possible optimization would be to store the offset less frequently.
+
+We've completed the tour through the read-side implementation in this example project. This read-side processor implementation is built using everything that was covered in the prior five example projects. The write-side and the read-side are running in an Akka cluster, which was introduced in the first example project [akka-java-cluster](https://github.com/mckeeh3/akka-java-cluster). While the example code did not directly use any cluster-aware actors, covered in the [akka-java-cluster-aware](https://github.com/mckeeh3/akka-java-cluster-aware) project, this type of actor is used to implement cluster singleton actors, and it is heavily used internally with cluster sharding.
+
+A cluster singleton, covered in the [akka-java-cluster-singleton](https://github.com/mckeeh3/akka-java-cluster-singleton) project, is used to bootstrap the read-side actors. The read-side is implemented using cluster sharding, which was covered in the [akka-java-cluster-sharding](https://github.com/mckeeh3/akka-java-cluster-sharding) project. Cluster sharding is used to run parallel read-side processor actors that process events by tag.
+
+There is a somewhat subtle feature of the implementation of the cluster singleton and cluster sharding in this project. The cluster singleton is continually sending messages to the read-side tag processor actors. The subtle reason for doing this is to make sure that each read-side processor is running and they continue to run as cluster nodes are added and removed from the cluster.
+
+Let's walk through a simple example scenario. Say there are five tags so therefore we need to run five read-side processor actors, one for each tag. Say the cluster is running with three nodes and the five read-side processor actors are distributed across the cluster. Two actors on node one, one of node two, and two on node three.
+
+What happens when one of the cluster nodes is removed?  Well, cluster sharding knows how to redistribute the read-side processor actors across the remaining two cluster nodes. However, cluster sharding does not restart the sharded actors. Something else needs to trigger the actor restart. This is where our cluster singleton actor comes in. On the next heartbeat, the cluster singleton actor sends messages to each read-side processor actor. These messages are sent to a cluster region actor. If an instance of the target actor is not available, the cluster sharding actors will create an instance. The result in this example scenario is that the read-side processor actor that was running on the now gone node two is now restarted on one of the remaining nodes.
 
 ### Installation
 
@@ -153,15 +226,17 @@ For Cassandra installation please see the [Installing Cassandra](http://cassandr
 
 One of the easiest ways to use Cassandra for testing is to download the tar file, uncompress the files, and run a Cassandra process in the background.
 
+~~~bash
 tar -xzvf apache-cassandra-3.6-bin.tar.gz
 cd apache-cassandra-3.6
 ./bin cassandra -f
+~~~
 
 This installs a ready to tun version of Cassandra.
 
 Note: please make sure to use Java 8 to run Cassandra.
 
-Tip: the default location of the database files are located in the Cassandra installation `data` directory. You can remove this directory when you want to run tests with an empty database.
+Tip: the default location of the database files is `data` directory within the Cassandra installation directory. To reset with an empty database stop Cassandra, remove the `data` directory and restart Cassandra.
 
 ### Run a cluster (Mac, Linux)
 
